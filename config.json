@@ -1,0 +1,14 @@
+{
+  "box_x_mm": 400,
+  "box_y_mm": 200,
+  "box_z_mm": 300,
+  "base_x_mm": 150,
+  "base_y_mm": 150,
+  "margen_mm": 20,
+  "diam_tambor_mm": 15.0,
+  "imanes_por_tambor": 2,
+  "paso_scan_mm": 30,
+  "paso_joy_mm": 5,
+  "pwm_duty": 700,
+  "pwm_duty_lento": 500
+}
