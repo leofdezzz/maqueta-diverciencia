@@ -1,97 +1,75 @@
-# Aerogenerador flotante auto-orientable
+# maqueta-diverciencia
 
-> Una maqueta que descubre ella sola dónde captar más viento.
+Aerogenerador flotante auto-orientable. **ESP32 + MicroPython + 4 cabrestantes con cinemática inversa.**
 
-Imagina una caja llena de agua y, flotando dentro, un aerogenerador en miniatura. Un blower de 12 V sopla desde alguno de los cuatro lados — no sabes cuál, o cambia a menudo. ¿Cuál es la mejor posición para la turbina?
-
-Este proyecto responde esa pregunta **en menos de un minuto**, automáticamente: cuatro cabrestantes tiran de unos cables finos atados a las esquinas de la base flotante. El ESP32 desplaza la base por el eje X buscando el pico de corriente, luego hace lo mismo por el eje Y, y aparca la turbina en el óptimo.
-
-Todo configurable por milímetros reales. Todo en MicroPython. Menos de 30 € en componentes.
+Un blower sopla viento desde algún lado de una caja con agua. Dentro flota una base con un aerogenerador en miniatura. El sistema mueve la base por X e Y hasta la posición que genera **más corriente**, y se queda allí.
 
 ---
 
-## Vista general
+## Cómo trabaja
 
 ```
-                           BLOWER
-                             ║
-                             ║  viento →
-     ┌───────────────────────╨────────────────┐
-     │ [FL]═════════════════════════════[FR]  │  ← 4 motores fijos en las
-     │   ╲                             ╱      │    esquinas superiores
-     │    ╲       ┌─────────────┐    ╱        │
-     │     ╲      │  turbina    │   ╱         │  ← base flotante, 4 cables
-     │      ╲     │  flotando   │  ╱          │    tiran desde arriba
-     │       ╲    │  en el agua │ ╱           │
-     │        ╲   └─────────────┘╱            │
-     │ [BL]═══════════════════[BR]            │
-     │           agua dentro ~~~~~~           │
-     └────────────────────────────────────────┘
+                          BLOWER
+                            ║  →
+     ┌──────────────────────╨────────────┐
+     │ [FL]═════════════════════[FR]     │  4 motores fijos en las
+     │   ╲                      ╱        │  esquinas superiores
+     │    ╲    ┌───────────┐   ╱         │
+     │     ╲   │  turbina  │  ╱          │  base flotante, tirada
+     │      ╲  │  flotando │ ╱           │  por 4 cables
+     │       ╲ └───────────┘╱            │
+     │ [BL]═════════════[BR]             │
+     │       agua dentro  ~~~~           │
+     └───────────────────────────────────┘
 ```
 
-Cada motor controla la longitud de su cable. Los 4 cables juntos deciden la posición exacta de la base en el plano X-Y. La flotabilidad se encarga de la altura.
+Secuencia:
 
----
-
-## El flujo, en 6 pasos
-
-```
- 1.  Enciendes. Base en cualquier punto.
- 2.  Joystick → centras la base a ojo.
- 3.  ¿Cable flojo?  TENSAR (los 4 motores recogen).
- 4.  SCAN largo (3s) → marca cero.  "Aquí estamos en el centro."
- 5.  SCAN corto → barre X, vuelve al mejor → barre Y, vuelve al mejor.
- 6.  Listo. La turbina está donde más corriente genera.
-```
+1. Centrar base con joystick.
+2. Pulsación larga `SCAN` (3 s) → marca cero.
+3. Pulsación corta `SCAN` → barre X, vuelve al máximo. Barre Y, vuelve al máximo.
+4. Base parada en el óptimo.
 
 ---
 
 ## Hardware
 
-| Pieza | Uso | Cantidad |
-|---|---|---|
-| ESP32 DevKit v1 | Cerebro (MicroPython) | 1 |
-| JGB37-520 12V 22 RPM | Motor cabrestante | 4 |
-| L298N | Driver motor | 2 (dual) o 4 |
-| Hall A3144 | Cuenta pulsos de rotación | 4 |
-| Imán neodimio 3×1 mm | 2 por tambor → media vuelta/pulso | 8 |
-| Joystick KY-023 | Movimiento manual | 1 |
-| Pulsadores 12 mm | SCAN / TENSAR / DESTENSAR | 3 |
-| Mosquetón pesca con giratorio | Unión desmontable cable ↔ base | 4 |
-| Armella M4 | Anclaje en la base | 4 |
-| Sedal trenzado 50 lb | El cable | 5 m |
-| Fuente 12 V / 3 A | Alimenta motores | 1 |
+| Pieza | Cantidad |
+|---|---|
+| ESP32 DevKit v1 | 1 |
+| Motor JGB37-520 12 V 22 RPM | 4 |
+| Driver L298N | 2 (dual) o 4 |
+| Sensor Hall A3144 | 4 |
+| Imán neodimio 3×1 mm | 8 (2 por tambor) |
+| Joystick KY-023 | 1 |
+| Pulsadores 12 mm | 3 |
+| Mosquetón pesca con giratorio | 4 |
+| Armella M4 | 4 |
+| Sedal trenzado 50 lb | 5 m |
+| Fuente 12 V / 3 A | 1 |
 
-**Total aproximado:** 25-30 €.
-
----
-
-## El truco: cinemática inversa
-
-El código no mueve "un paso a la izquierda". Trabaja con **milímetros absolutos**.
-
-Cuando le pides *"lleva la base a (+50 mm, -30 mm)"*:
-
-1. Calcula la posición 3D de las 4 esquinas superiores de la caja.
-2. Calcula dónde estará cada esquina de la base al llegar al destino.
-3. Resuelve la distancia euclídea en 3D motor ↔ esquina de base, cable por cable.
-4. Compara con la longitud **actual** → decide si cada cable debe acortarse o alargarse, y cuánto.
-5. Convierte milímetros a pulsos Hall sabiendo el diámetro del tambor.
-6. Cada motor va a por *sus* pulsos. El que llega primero se detiene solo. Cuando los 4 terminan, la base está exactamente donde pediste.
-
-La fórmula clave, por cable:
-
-```
-L = √( (x_base + offset_x - corner_x)² + (y_base + offset_y - corner_y)² + altura² )
-```
-
-Esto hace que funcione **incluso si la caja es rectangular**: el motor FR no recoge lo mismo que el FL cuando mueves en diagonal, y eso el código lo calcula solo.
+Coste aproximado: 25-30 €.
 
 ---
 
-## `config.json` — toda tu caja en un archivo
+## Cinemática inversa
 
-No tocas código para adaptar el sistema a *tu* montaje. Editas esto:
+Movimiento en milímetros absolutos, no en pasos ciegos. Para llevar la base a `(x, y)`:
+
+```
+L_cable = √( (x + offset_x − corner_x)² + (y + offset_y − corner_y)² + altura² )
+```
+
+- 4 longitudes calculadas por geometría 3D.
+- Cada motor recibe su delta en pulsos Hall.
+- El motor que llega antes a su objetivo para solo; los otros siguen.
+- Funciona igual en cajas cuadradas o rectangulares — las asimetrías se resuelven solas.
+
+---
+
+## `config.json`
+
+Todas las medidas en un archivo. No se toca código para adaptar el sistema.
 
 ```json
 {
@@ -112,36 +90,29 @@ No tocas código para adaptar el sistema a *tu* montaje. Editas esto:
 
 | Clave | Significado |
 |---|---|
-| `box_x/y/z_mm` | Dimensiones internas de la caja. **Z** = distancia vertical del motor al nivel del agua. |
+| `box_x/y/z_mm` | Dimensiones internas de la caja. `Z` = altura del motor sobre el agua. |
 | `base_x/y_mm` | Dimensiones de la base flotante. |
-| `margen_mm` | Seguridad al borde interno (el rango útil se reduce en este valor). |
-| `diam_tambor_mm` | Diámetro del tambor con cable enrollado. Determina cuánto cable da cada vuelta. |
-| `imanes_por_tambor` | 2 imanes = media vuelta por pulso Hall. 1 = vuelta entera. |
-| `paso_scan_mm` | Resolución del barrido automático. |
-| `paso_joy_mm` | Cuánto mueve cada tick de joystick. |
-| `pwm_duty` / `pwm_duty_lento` | Velocidad motores (0-1023). Lento para joystick y tensar. |
+| `margen_mm` | Margen de seguridad al borde. |
+| `diam_tambor_mm` | Diámetro del tambor con cable enrollado. |
+| `imanes_por_tambor` | 2 imanes = media vuelta/pulso. |
+| `paso_scan_mm` / `paso_joy_mm` | Resolución del barrido y del joystick. |
+| `pwm_duty` / `pwm_duty_lento` | Velocidad motores (0-1023). |
 
-El firmware recalcula automáticamente:
-- Recorrido útil: `(box - base)/2 - margen` en cada eje.
-- Milímetros por pulso: `π × diámetro / imanes`.
+Cálculos automáticos al arrancar:
+- Recorrido útil: `(box − base)/2 − margen` por eje.
+- mm por pulso: `π × diámetro / imanes`.
 
 ---
 
-## Montaje mecánico
+## Controles
 
-### Unión cable ↔ base (desmontable)
-
-1. Atornillas una **armella M4** en cada esquina de la base flotante.
-2. El extremo del cable termina con un lazo; al lazo le clipa un **mosquetón de pesca con giratorio**.
-3. Para unir: abres el mosquetón, pasa por la armella, cierras. 2 segundos.
-4. El giratorio evita que el cable se enrolle sobre sí mismo cuando el tambor gira.
-
-### Tambores + sensores Hall
-
-- Imprime o monta un tambor en el eje de cada motor (diámetro anotado en `config.json`).
-- Pega 2 imanes neodimio pequeños a **180°**, **misma polaridad hacia fuera** (el A3144 es unipolar).
-- Fija el A3144 al chasis del motor a 2-3 mm del imán cuando pasa.
-- Cada media vuelta del tambor = un flanco detectado = `π × diámetro / 2` mm de cable.
+| Acción | Resultado |
+|---|---|
+| Joystick | Mueve la base por X-Y en pasos de `paso_joy_mm`. |
+| `TENSAR` mantenido | Los 4 motores recogen a la vez. |
+| `DESTENSAR` mantenido | Los 4 motores sueltan a la vez. |
+| `SCAN` corto | Barrido automático X + Y. |
+| `SCAN` largo (3 s) | Marca posición actual como cero. |
 
 ---
 
@@ -149,16 +120,26 @@ El firmware recalcula automáticamente:
 
 | Función | Pin |
 |---|---|
-| Motor FL (IN1 / IN2 / EN) | 14 / 27 / 26 |
+| Motor FL (IN1/IN2/EN) | 14 / 27 / 26 |
 | Motor FR | 32 / 33 / 25 |
 | Motor BL | 13 / 12 / 15 |
 | Motor BR | 4 / 16 / 17 |
-| Hall FL / FR / BL / BR | 18 / 19 / 21 / 22 |
-| Joystick X / Y (ADC) | 36 / 39 |
-| Sensor turbina (ADC) | 34 |
+| Hall FL/FR/BL/BR | 18 / 19 / 21 / 22 |
+| Joystick X/Y | 36 / 39 (ADC) |
+| Sensor turbina | 34 (ADC) |
 | Botón SCAN | 5 |
 | Botón TENSAR | 2 |
 | Botón DESTENSAR | 35 *(pull-up externo 10 kΩ)* |
+
+---
+
+## Montaje mecánico
+
+**Unión cable ↔ base:** armella M4 en cada esquina de la base + mosquetón de pesca con giratorio en el extremo del cable. Clipa/desclipa en 2 segundos. El giratorio evita que el cable se enrolle sobre sí mismo.
+
+**Tambor:** pieza cilíndrica al eje del motor, 2 imanes neodimio pegados a 180° con la **misma polaridad hacia fuera**. A3144 fijado al chasis a 2-3 mm del imán.
+
+**Anclaje motor al tambor:** nudo pasando por un agujero del tambor + gota de cianoacrilato.
 
 ---
 
@@ -170,55 +151,41 @@ mpremote connect COMx cp config.json :config.json
 mpremote connect COMx reset
 ```
 
-Abre la consola serie (115200 baud). Verás la config cargada, el recorrido útil calculado, y el prompt de botones.
+Consola serie a 115200 baud. Al arrancar imprime la config cargada y el recorrido útil calculado.
 
 ---
 
-## Controles
+## Estructura del código
 
-| Acción | Resultado |
-|---|---|
-| **Joystick** | Mueve la base manualmente por X-Y en pasos de `paso_joy_mm`. |
-| **TENSAR (mantener)** | Los 4 motores recogen cable a la vez. Útil para quitar holgura. |
-| **DESTENSAR (mantener)** | Los 4 motores sueltan cable a la vez. Para liberar tensión. |
-| **SCAN pulsación corta** | Arranca el barrido automático X + Y. |
-| **SCAN pulsación larga (3 s)** | Marca la posición actual como **cero** geométrico. |
-
----
-
-## Arquitectura del código
-
-Un único `main.py` (~300 líneas MicroPython):
+`main.py`, ~300 líneas.
 
 ```
-config.json ─► CFG ─► geometría derivada (rangos, esquinas, mm/pulso)
-                         │
-                         ▼
-Motor (class) ◄── IRQ Hall A3144 ─► pulses_move
-    │
-    ▼
-mover_a(x_mm, y_mm)  [cinemática inversa]
-    │
-    ├── joystick_step()      → incremental, duty lento
-    ├── rutina_escaneo()     → barrido X luego Y
-    └── tensar/destensar     → los 4 a la vez, mantenido
+CFG  ← config.json
+ │
+ ├─ derivadas: TRAVEL_MAX, BOX_CORNERS, MM_POR_PULSO
+ │
+ ├─ Motor (class) ── IRQ Hall ──► pulses_move
+ │
+ ├─ mover_a(x_mm, y_mm)           cinemática inversa
+ ├─ joystick_step()                incremental
+ ├─ rutina_escaneo()               X luego Y
+ └─ tensar/destensar_mantenido     los 4 a la vez
 
-Loop principal:
-    TENSAR > DESTENSAR > SCAN > joystick
+Loop: TENSAR > DESTENSAR > SCAN > joystick
 ```
 
 ---
 
-## Ideas para ampliar
+## Ampliaciones
 
-- Pantalla OLED mostrando `(x, y)` en tiempo real y la lectura de la turbina.
-- Guardar el último óptimo encontrado en el flash (`ujson`).
-- Escaneo 2D en espiral en vez de X seguido de Y → más rápido cuando el viento no es perpendicular.
-- Detección de atasco por current sensing en los motores (INA219).
-- Control por Bluetooth/Wi-Fi desde el móvil (web dashboard).
+- OLED con `(x, y)` y lectura turbina en tiempo real.
+- Guardar óptimo en flash (`ujson`).
+- Barrido 2D en espiral.
+- Current sensing para detectar atascos (INA219).
+- Control Bluetooth/Wi-Fi.
 
 ---
 
 ## Licencia
 
-MIT. Úsalo, copialo, mejóralo.
+MIT.
