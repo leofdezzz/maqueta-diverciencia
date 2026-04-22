@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Aerogenerador BLE</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:-apple-system,system-ui,sans-serif;background:#0e1116;color:#e6edf3;padding:14px;max-width:560px;margin:0 auto;font-size:15px}
+h1{font-size:20px;margin-bottom:4px}
+.sub{color:#8b949e;font-size:13px;margin-bottom:14px}
+.stat{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px;margin-bottom:14px;font-family:ui-monospace,monospace;font-size:13px;line-height:1.6}
+.stat .k{color:#8b949e}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.motor{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px}
+.motor h3{font-size:14px;margin-bottom:8px;color:#7ee787}
+.row{display:flex;gap:6px}
+button{flex:1;padding:14px 8px;border:none;border-radius:8px;background:#21262d;color:#e6edf3;font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation;user-select:none;-webkit-user-select:none}
+button:disabled{opacity:0.35;cursor:not-allowed}
+button:active:not(:disabled){filter:brightness(1.3)}
+button.w{background:#196c2e;color:#fff}
+button.r{background:#7d2828;color:#fff}
+button.s{background:#30363d}
+button.b{background:#1f6feb;color:#fff}
+button.d{background:#7d2828}
+.full{margin-bottom:14px}
+.full button{padding:18px}
+.move{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px;margin-bottom:14px}
+input{padding:12px;border-radius:8px;border:1px solid #30363d;background:#0e1116;color:#e6edf3;font-size:14px;width:100%}
+.conn{margin-bottom:14px}
+.conn button{padding:18px;font-size:16px}
+.conn button.on{background:#196c2e}
+.conn button.off{background:#1f6feb}
+.log{max-height:140px;overflow:auto;background:#0e1116;border:1px solid #30363d;border-radius:8px;padding:8px;font-family:ui-monospace,monospace;font-size:11px;color:#8b949e;margin-top:14px}
+.log div{padding:1px 0}
+.log .ok{color:#7ee787}
+.log .err{color:#ff7b72}
+.warn{background:#3d2d0a;border:1px solid #7c5a17;color:#f0b429;padding:10px;border-radius:8px;margin-bottom:14px;font-size:13px;display:none}
+.warn.show{display:block}
+hr{border:none;border-top:1px solid #30363d;margin:14px 0}
+</style>
+</head>
+<body>
+
+<h1>Aerogenerador flotante · BLE</h1>
+<div class="sub">control remoto por bluetooth low energy</div>
+
+<div id="warn" class="warn">
+  Tu navegador no soporta Web Bluetooth. Usa <b>Chrome</b>, <b>Edge</b> u <b>Opera</b> en desktop, o Chrome en Android. Safari/iOS y Firefox no sirven.
+</div>
+
+<div class="conn">
+  <button id="btnConn" class="off" onclick="toggleConnect()">Conectar BLE</button>
+</div>
+
+<div class="stat" id="stat"><span class="k">estado:</span> desconectado</div>
+
+<div class="grid" id="motorGrid">
+  <div class="motor"><h3>FL · frente-izq</h3><div class="row">
+    <button class="w hold" data-m="FL" data-a="wind" disabled>Tensar</button>
+    <button class="r hold" data-m="FL" data-a="release" disabled>Soltar</button>
+  </div></div>
+  <div class="motor"><h3>FR · frente-der</h3><div class="row">
+    <button class="w hold" data-m="FR" data-a="wind" disabled>Tensar</button>
+    <button class="r hold" data-m="FR" data-a="release" disabled>Soltar</button>
+  </div></div>
+  <div class="motor"><h3>BL · atras-izq</h3><div class="row">
+    <button class="w hold" data-m="BL" data-a="wind" disabled>Tensar</button>
+    <button class="r hold" data-m="BL" data-a="release" disabled>Soltar</button>
+  </div></div>
+  <div class="motor"><h3>BR · atras-der</h3><div class="row">
+    <button class="w hold" data-m="BR" data-a="wind" disabled>Tensar</button>
+    <button class="r hold" data-m="BR" data-a="release" disabled>Soltar</button>
+  </div></div>
+</div>
+
+<div class="row full">
+  <button class="w hold" data-m="ALL" data-a="wind" disabled>Tensar TODOS</button>
+  <button class="r hold" data-m="ALL" data-a="release" disabled>Soltar TODOS</button>
+</div>
+
+<hr>
+
+<div class="move">
+  <input id="x" type="number" step="5" placeholder="x mm" value="0">
+  <input id="y" type="number" step="5" placeholder="y mm" value="0">
+  <button class="b" onclick="cmdMove()" disabled>Ir</button>
+</div>
+
+<div class="row full">
+  <button class="b" onclick="cmd({cmd:'scan'})" disabled>Escanear</button>
+  <button class="s" onclick="cmd({cmd:'zero'})" disabled>Marcar cero</button>
+</div>
+
+<div class="row full">
+  <button class="d" onclick="cmd({cmd:'stop'})" disabled>STOP TODO</button>
+</div>
+
+<div class="log" id="log"></div>
+
+<script>
+const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const RX_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+const TX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const HOLD_MS = 200;
+
+let device = null, rxChar = null, txChar = null;
+let connected = false;
+let rxBuf = '';
+
+// ---------- log ----------
+const logEl = document.getElementById('log');
+function log(msg, cls) {
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  const t = new Date();
+  const hh = String(t.getHours()).padStart(2, '0');
+  const mm = String(t.getMinutes()).padStart(2, '0');
+  const ss = String(t.getSeconds()).padStart(2, '0');
+  line.textContent = '[' + hh + ':' + mm + ':' + ss + '] ' + msg;
+  logEl.insertBefore(line, logEl.firstChild);
+  while (logEl.childNodes.length > 80) logEl.removeChild(logEl.lastChild);
+}
+
+// ---------- support check ----------
+if (!navigator.bluetooth) {
+  document.getElementById('warn').classList.add('show');
+  document.getElementById('btnConn').disabled = true;
+}
+
+// ---------- ui state ----------
+function setConnected(on) {
+  connected = on;
+  const btn = document.getElementById('btnConn');
+  btn.textContent = on ? 'Desconectar' : 'Conectar BLE';
+  btn.classList.toggle('on', on);
+  btn.classList.toggle('off', !on);
+  document.querySelectorAll('button:not(#btnConn)').forEach(b => b.disabled = !on);
+  if (!on) document.getElementById('stat').innerHTML = '<span class="k">estado:</span> desconectado';
+}
+
+// ---------- connect ----------
+async function toggleConnect() {
+  if (connected) {
+    if (device && device.gatt.connected) device.gatt.disconnect();
+    return;
+  }
+  if (!navigator.bluetooth) return;
+  try {
+    device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: [SERVICE_UUID] }]
+    });
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    log('conectando a ' + device.name + '...');
+    const server = await device.gatt.connect();
+    const svc = await server.getPrimaryService(SERVICE_UUID);
+    rxChar = await svc.getCharacteristic(RX_UUID);
+    txChar = await svc.getCharacteristic(TX_UUID);
+    await txChar.startNotifications();
+    txChar.addEventListener('characteristicvaluechanged', onNotify);
+    setConnected(true);
+    log('conectado', 'ok');
+    setTimeout(() => cmd({ cmd: 'status' }).catch(() => {}), 300);
+  } catch (e) {
+    log('err conexion: ' + e.message, 'err');
+  }
+}
+
+function onDisconnected() {
+  rxChar = null; txChar = null;
+  setConnected(false);
+  log('desconectado del dispositivo', 'err');
+}
+
+// ---------- rx ----------
+function onNotify(e) {
+  const chunk = new TextDecoder().decode(e.target.value);
+  rxBuf += chunk;
+  let nl;
+  while ((nl = rxBuf.indexOf('\n')) >= 0) {
+    const line = rxBuf.slice(0, nl).trim();
+    rxBuf = rxBuf.slice(nl + 1);
+    if (!line) continue;
+    try {
+      handleEvent(JSON.parse(line));
+    } catch (err) {
+      log('parse err: ' + line, 'err');
+    }
+  }
+}
+
+function handleEvent(o) {
+  if (o.ev === 'pos') {
+    document.getElementById('stat').innerHTML =
+      '<span class="k">pos:</span> (' + o.x + ', ' + o.y + ') mm  ' +
+      '<span class="k">rango:</span> &plusmn;' + o.tx + ' / &plusmn;' + o.ty + '<br>' +
+      '<span class="k">cables:</span> FL=' + o.c.FL + ' FR=' + o.c.FR +
+      ' BL=' + o.c.BL + ' BR=' + o.c.BR + ' mm<br>' +
+      '<span class="k">turbina ADC:</span> ' + o.t;
+  } else if (o.ev === 'ready')      log('ESP32 listo', 'ok');
+  else if (o.ev === 'scan_start')   log('scan en curso...');
+  else if (o.ev === 'scan_done')    log('scan ok: (' + o.x + ', ' + o.y + ')', 'ok');
+  else if (o.ev === 'zero')         log('cero marcado', 'ok');
+  else if (o.ev === 'pong')         log('pong', 'ok');
+  else if (o.ev === 'error')        log('err: ' + o.msg, 'err');
+  else                              log(JSON.stringify(o));
+}
+
+// ---------- tx ----------
+let writeQueue = Promise.resolve();
+function cmd(obj) {
+  writeQueue = writeQueue.then(async () => {
+    if (!rxChar) return;
+    const data = new TextEncoder().encode(JSON.stringify(obj) + '\n');
+    const CHUNK = 180;
+    for (let i = 0; i < data.length; i += CHUNK) {
+      const part = data.slice(i, i + CHUNK);
+      try {
+        if (rxChar.writeValueWithoutResponse) {
+          await rxChar.writeValueWithoutResponse(part);
+        } else {
+          await rxChar.writeValue(part);
+        }
+      } catch (e) {
+        log('write err: ' + e.message, 'err');
+        return;
+      }
+    }
+  }).catch(() => {});
+  return writeQueue;
+}
+
+function cmdMove() {
+  const x = parseFloat(document.getElementById('x').value) || 0;
+  const y = parseFloat(document.getElementById('y').value) || 0;
+  cmd({ cmd: 'move', x: x, y: y });
+  log('move -> (' + x + ', ' + y + ')');
+}
+
+// ---------- hold buttons ----------
+document.querySelectorAll('button.hold').forEach(b => {
+  let timer = null;
+  const name = b.dataset.m;
+  const action = b.dataset.a;
+  const start = e => {
+    e.preventDefault();
+    if (b.disabled) return;
+    cmd({ cmd: 'motor', name: name, action: action });
+    timer = setInterval(() => cmd({ cmd: 'motor', name: name, action: action }), HOLD_MS);
+  };
+  const stop = () => {
+    if (timer) { clearInterval(timer); timer = null; }
+    if (name === 'ALL') {
+      cmd({ cmd: 'motor', name: 'ALL', action: 'stop' });
+    } else {
+      cmd({ cmd: 'motor', name: name, action: 'stop' });
+    }
+  };
+  b.addEventListener('mousedown', start);
+  b.addEventListener('touchstart', start, { passive: false });
+  b.addEventListener('mouseup', stop);
+  b.addEventListener('mouseleave', stop);
+  b.addEventListener('touchend', stop);
+  b.addEventListener('touchcancel', stop);
+});
+
+setConnected(false);
+</script>
+</body>
+</html>
