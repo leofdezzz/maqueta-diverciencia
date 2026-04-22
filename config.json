@@ -10,5 +10,7 @@
   "paso_scan_mm": 30,
   "paso_joy_mm": 5,
   "pwm_duty": 700,
-  "pwm_duty_lento": 500
+  "pwm_duty_lento": 500,
+  "wifi_ssid": "AeroFlotante",
+  "wifi_pass": "12345678"
 }
