@@ -186,6 +186,54 @@ Loop: TENSAR > DESTENSAR > SCAN > joystick
 
 ---
 
+---
+
+## Versión Microbit v2 (alternativa)
+
+Sistema reescrito para **2× Microbit v2** en lugar de ESP32.
+
+```
+Microbit A (aerogenerador)  =RADIO=>  Microbit B (ventilador)
+   ADC: voltaje                            Brújula integrada
+   Botones A/B                             2 motores (FL + BR)
+   Sin cables extra                         Sin PCF8574
+```
+
+| Carpeta | Contenido |
+|---|---|
+| `microbit_aerogenerador/` | Código Microbit A (lee voltaje, envía radio) |
+| `microbit_ventilador/` | Código Microbit B (recibe radio, mueve motores) |
+
+### Archivos
+
+| Archivo | Descripción |
+|---|---|
+| `microbit_aerogenerador/aerogenerador_2m.py` | Microbit A — 2 motores |
+| `microbit_ventilador/ventilador_2motores.py` | Microbit B — 2 motores FL+BR en diagonal |
+
+### Hardware adicional necesario
+
+| Componente | Cantidad |
+|---|---|
+| Microbit v2 BBC | 2 |
+| IoT:bit (o similar) | 2 (opcional — solo si necesitas WiFi) |
+| PCF8574 | 1 (solo para versión 4 motores) |
+| L298N | 2 (uno por motor) |
+| Divisor resistivo (10kΩ + 4.7kΩ) | 1 |
+
+### Diferencias con versión ESP32
+
+- Sin encoders Hall — control por tiempo (menos preciso)
+- Sin WiFi/Web — control solo por botones A/B
+- Sin joystick — el Microbit B mueve automáticamente
+- Brújula代替sensor de viento direccional
+
+### Flashear
+
+Abrir [python.microbit.org](https://python.microbit.org/), pegar el código y descargar.
+
+---
+
 ## Licencia
 
 MIT.
